@@ -11,6 +11,8 @@ DEFAULT_INPUT = Path("d/check_result.csv")
 DEFAULT_SOCKSEEK_OUTPUT = Path("d/sockseek_list.csv")
 DEFAULT_WISHLIST_OUTPUT = Path("d/wishlist.txt")
 RESULT_FIELDS = ("title", "album", "artist", "status")
+DEFAULT_STATUSES = ("MISSING", "FORMAT-MISMATCH")
+VALID_STATUSES = frozenset(("FOUND", *DEFAULT_STATUSES))
 
 
 @dataclass(frozen=True)
@@ -19,7 +21,7 @@ class SockseekConfig:
 
     input_path: Path
     output_path: Path
-    include_format_mismatch: bool = True
+    statuses: frozenset[str] = frozenset(DEFAULT_STATUSES)
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,8 @@ class WishlistConfig:
 
     input_path: Path
     output_path: Path
+    statuses: frozenset[str] = frozenset(DEFAULT_STATUSES)
+    expected_format: str = "flac"
 
 
 def read_check_results(path: Path) -> list[dict[str, str]]:
@@ -56,13 +60,10 @@ class SockseekGenerator:
         self.config = config
 
     def run(self) -> int:
-        statuses = {"MISSING"}
-        if self.config.include_format_mismatch:
-            statuses.add("FORMAT-MISMATCH")
         rows = [
             row
             for row in read_check_results(self.config.input_path)
-            if row["status"] in statuses
+            if row["status"] in self.config.statuses
         ]
         self.config.output_path.parent.mkdir(parents=True, exist_ok=True)
         with self.config.output_path.open("w", encoding="utf-8", newline="") as output:
@@ -86,11 +87,21 @@ class WishlistGenerator:
         rows = [
             row
             for row in read_check_results(self.config.input_path)
-            if row["status"] in {"MISSING", "FORMAT-MISMATCH"}
+            if row["status"] in self.config.statuses
         ]
         self.config.output_path.parent.mkdir(parents=True, exist_ok=True)
         lines = [
-            " - ".join((row["title"], row["album"], row["artist"], row["status"]))
+            " ".join(
+                (
+                    row["title"],
+                    row["artist"],
+                    *(
+                        (self.config.expected_format,)
+                        if row["status"] == "FORMAT-MISMATCH"
+                        else ()
+                    ),
+                )
+            )
             for row in rows
         ]
         self.config.output_path.write_text(
@@ -107,22 +118,58 @@ def parse_args(argv: list[str]) -> SockseekConfig | WishlistConfig:
     sockseek = generators.add_parser("sockseek", help="write a Sockseek CSV")
     sockseek.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     sockseek.add_argument("--output", type=Path, default=DEFAULT_SOCKSEEK_OUTPUT)
-    sockseek.add_argument(
-        "--include-format-mismatch",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="include FORMAT-MISMATCH rows (default: enabled)",
-    )
+    _add_status_option(sockseek)
 
     wishlist = generators.add_parser("wishlist", help="write a text wishlist")
     wishlist.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     wishlist.add_argument("--output", type=Path, default=DEFAULT_WISHLIST_OUTPUT)
+    _add_status_option(wishlist)
+    wishlist.add_argument(
+        "--format",
+        dest="expected_format",
+        default="flac",
+        help="expected format written for every wishlist track (default: flac)",
+    )
 
     args = parser.parse_args(argv)
     if args.generator == "sockseek":
         return SockseekConfig(
             args.input,
             args.output,
-            include_format_mismatch=args.include_format_mismatch,
+            statuses=_parse_statuses(args.status),
         )
-    return WishlistConfig(args.input, args.output)
+    return WishlistConfig(
+        args.input,
+        args.output,
+        statuses=_parse_statuses(args.status),
+        expected_format=args.expected_format.casefold(),
+    )
+
+
+def _add_status_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--status",
+        nargs="+",
+        metavar="STATUS",
+        help="statuses to export: MISSING, FORMAT-MISMATCH, or FOUND "
+        "(default: MISSING FORMAT-MISMATCH)",
+    )
+
+
+def _parse_statuses(values: list[str] | None) -> frozenset[str]:
+    if values is None:
+        return frozenset(DEFAULT_STATUSES)
+    statuses = frozenset(
+        "FORMAT-MISMATCH"
+        if value.strip().upper() == "FORMAT"
+        else value.strip().upper()
+        for item in values
+        for value in item.split(",")
+        if value.strip()
+    )
+    unknown = statuses - VALID_STATUSES
+    if unknown:
+        raise ValueError("Unknown status(es): " + ", ".join(sorted(unknown)))
+    if not statuses:
+        raise ValueError("At least one status is required")
+    return statuses

@@ -27,9 +27,6 @@ pythonpath = ["src"]
 target-version = "py311"
 line-length = 88
 force-exclude = true
-extend-exclude = [
-    "legacy",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
