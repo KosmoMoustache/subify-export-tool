@@ -1,0 +1,23 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: uv run python -m ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run python -m ruff format --check
+        language: system
+        types: [python]
+      - id: ty-active-package
+        name: ty (active package)
+        entry: uv run python -m ty check src/subify
+        language: system
+        pass_filenames: false
+      - id: pytest
+        name: pytest
+        entry: uv run python -m pytest
+        language: system
+        pass_filenames: false
