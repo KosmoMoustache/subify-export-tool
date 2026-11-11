@@ -1,33 +1,41 @@
-# Subify | Spotify - Subsonic help tool
+# Subify
 
-## How to use
+CLI to turn a Spotify CSV export into a Subsonic/Navidrome playlist, check your
+library, and export missing tracks.
 
-Get your Spotify Playlist export in CSV format (e.g., <https://exportify.net/>), then run:
+## Setup
 
-Convert the Spotify CSV to Subify CSV:
+Requires [uv](https://docs.astral.sh/uv/).
 
-```bash
-subify convert
+```shell
+uv sync
 ```
 
-Check wich tracks are already in your Subsonic library:
+Fill `URL`, `USERNAME`, and `PASSWORD` in `creds.txt`, then verify the
+connection:
 
-```bash
-subify check
+```shell
+uv run subify test
 ```
 
-Generate a wishlist for missing tracks in your library:
+`creds.txt` is ignored by Git. Credentials may also be supplied with
+`NAVIDROME_URL`, `NAVIDROME_USER`, and `NAVIDROME_PASSWORD`.
 
-```bash
-# CSV for input to sockseek
-subify generate sockseek
+## Typical workflow
 
-# Newline delimited file
-subify generate wishlist
+```shell
+# 1. Export a Spotify playlist as CSV, then convert it.
+uv run subify convert --input spotify.csv --output playlist.csv
+
+# 2. Match it against the server; writes check_result.csv.
+uv run subify check --playlist playlist.csv --cache match_cache.csv
+
+# 3. Export tracks that are missing or have the wrong format.
+uv run subify generate wishlist --input check_result.csv
+
+# 4. Create or update the server playlist.
+uv run subify sync --input playlist.csv --playlist-name "My playlist"
 ```
 
-Synchronize your Subsonic library with the Spotify playlist:
-
-```bash
-subify sync
-```
+Use `--dry-run` with `sync` to preview changes. Run `uv run subify help` or
+append `--help` to any command for all options.
